@@ -72,6 +72,29 @@ export default function HomeScreen() {
           different deployment key, which is the same core idea used in the reference repos.
         </Text>
       </View>
+
+      <View style={styles.paymentsSection}>
+        <Text style={styles.paymentsEyebrow}>Payments redesign preview</Text>
+        <Text style={styles.sectionTitle}>Checkout confidence snapshot</Text>
+        <Text style={styles.copy}>
+          This branch adds a commerce-style summary block to make the
+          `feat/payments-redesign` deployment unmistakable after OTA release.
+        </Text>
+        <View style={styles.metricsGrid}>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricValue}>3</Text>
+            <Text style={styles.metricLabel}>New payment options</Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricValue}>1.2s</Text>
+            <Text style={styles.metricLabel}>Faster checkout goal</Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricValue}>98%</Text>
+            <Text style={styles.metricLabel}>Expected success rate</Text>
+          </View>
+        </View>
+      </View>
     </Screen>
   );
 }
@@ -132,5 +155,47 @@ const styles = StyleSheet.create({
   mappingKey: {
     color: "#486581",
     fontSize: 12,
+  },
+  paymentsSection: {
+    backgroundColor: "#ECFDF3",
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 14,
+  },
+  paymentsEyebrow: {
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  metricCard: {
+    minWidth: 98,
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+    gap: 6,
+  },
+  metricValue: {
+    color: "#065F46",
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: "900",
+  },
+  metricLabel: {
+    color: "#047857",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
   },
 });
