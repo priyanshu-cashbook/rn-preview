@@ -6,33 +6,34 @@ const placeholder = (value: string | undefined, fallback: string) =>
 export default ({ config }: ConfigContext): ExpoConfig => {
   const productionKey = placeholder(
     process.env.EXPO_PUBLIC_REVOPUSH_PRODUCTION_KEY,
-    "REVOPUSH_PRODUCTION_KEY_PLACEHOLDER"
+    "REVOPUSH_PRODUCTION_KEY_PLACEHOLDER",
   );
   const stagingKey = placeholder(
     process.env.EXPO_PUBLIC_REVOPUSH_STAGING_KEY,
-    "REVOPUSH_STAGING_KEY_PLACEHOLDER"
+    "REVOPUSH_STAGING_KEY_PLACEHOLDER",
   );
   const previewFeatureKey = placeholder(
     process.env.EXPO_PUBLIC_REVOPUSH_PREVIEW_FEATURE_X_KEY,
-    "REVOPUSH_PREVIEW_FEATURE_X_KEY_PLACEHOLDER"
+    "REVOPUSH_PREVIEW_FEATURE_X_KEY_PLACEHOLDER",
   );
   const previewPaymentsKey = placeholder(
     process.env.EXPO_PUBLIC_REVOPUSH_PREVIEW_PAYMENTS_KEY,
-    "REVOPUSH_PREVIEW_PAYMENTS_KEY_PLACEHOLDER"
+    "REVOPUSH_PREVIEW_PAYMENTS_KEY_PLACEHOLDER",
   );
   const defaultNativeKey = placeholder(
     process.env.REVOPUSH_DEFAULT_DEPLOYMENT_KEY,
-    stagingKey
+    stagingKey,
   );
   const codePushServerUrl = placeholder(
     process.env.REVOPUSH_SERVER_URL,
-    "https://api.revopush.org"
+    "https://api.revopush.org",
   );
 
   return {
     ...config,
     name: "RN Preview Switcher",
     slug: "rn-preview-switcher",
+    owner: "priyanshu-ekeekaran",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
@@ -53,7 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       predictiveBackGestureEnabled: false,
     },
     web: {
-      output: "static",
+      output: "server",
       favicon: "./assets/images/favicon.png",
     },
     plugins: [
@@ -95,13 +96,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       reactCompiler: true,
     },
     extra: {
+      eas: {
+        projectId: "a726411e-1b09-4c41-bae0-e977e7b1ffbe",
+      },
       previewApiUrl: process.env.EXPO_PUBLIC_PREVIEW_API_URL ?? "",
       revopushServerUrl: codePushServerUrl,
       revopushAppNames: {
         ios: process.env.EXPO_PUBLIC_REVOPUSH_APP_NAME_IOS ?? "SelfPreviewIOS",
         android:
-          process.env.EXPO_PUBLIC_REVOPUSH_APP_NAME_ANDROID ??
-          "SelfPreviewAndroid",
+          process.env.EXPO_PUBLIC_REVOPUSH_APP_NAME_ANDROID ?? "SelfPreview",
       },
       deployments: {
         productionKey,
