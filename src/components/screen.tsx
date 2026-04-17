@@ -6,6 +6,7 @@ interface ScreenProps extends PropsWithChildren {
   subtitle: string;
   headerRight?: ReactNode;
   scroll?: boolean;
+  background?: string;
 }
 
 export function Screen({
@@ -14,6 +15,7 @@ export function Screen({
   headerRight,
   children,
   scroll = true,
+  background,
 }: ScreenProps) {
   const content = (
     <View style={styles.content}>
@@ -29,7 +31,9 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={[styles.safeArea, background ? { backgroundColor: background } : null]}
+    >
       {scroll ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}

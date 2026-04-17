@@ -10,6 +10,11 @@ import {
   useDeploymentStore,
 } from "@/store/use-deployment-store";
 
+const BRANCH_NAME = "main";
+const BRANCH_LABEL = "Production";
+const BRANCH_BG = "#E0F2FE";
+const BRANCH_BANNER_BG = "#075985";
+
 export default function HomeScreen() {
   const deployment = useDeploymentStore(selectActiveDeployment);
   const deployments = useDeploymentStore((state) => state.deployments);
@@ -23,7 +28,14 @@ export default function HomeScreen() {
     <Screen
       title="RN Preview Switcher"
       subtitle="A clean Expo SDK 55 demo showing how branch-based mobile previews can feel as fast as web preview deployments."
+      background={BRANCH_BG}
     >
+      <View style={[styles.branchBanner, { backgroundColor: BRANCH_BANNER_BG }]}>
+        <Text style={styles.branchBannerLabel}>BRANCH</Text>
+        <Text style={styles.branchBannerName}>{BRANCH_NAME}</Text>
+        <Text style={styles.branchBannerTag}>{BRANCH_LABEL}</Text>
+      </View>
+
       <HeroCard
         deployment={deployment}
         currentLabel={currentLabel}
@@ -33,11 +45,7 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Environment health</Text>
         <View style={styles.pillRow}>
-          <StatusPill
-            label={status}
-            tone="#0F172A"
-            background="#DBEAFE"
-          />
+          <StatusPill label={status} tone="#0F172A" background="#DBEAFE" />
           <StatusPill
             label={canUseNativeRevopush() ? "Dev Build" : isExpoGo ? "Expo Go" : "Web"}
             tone={canUseNativeRevopush() ? "#1F9D55" : "#8A6412"}
@@ -77,6 +85,29 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  branchBanner: {
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 4,
+  },
+  branchBannerLabel: {
+    color: "#BAE6FD",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 2,
+  },
+  branchBannerName: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "900",
+    fontFamily: "Courier",
+  },
+  branchBannerTag: {
+    color: "#7DD3FC",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   section: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
