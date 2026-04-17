@@ -34,3 +34,5 @@ export const syncToDeployment = async (
 
   return { status: "MOCK_SUCCESS" };
 };
+
+export const restartApp = () => {};

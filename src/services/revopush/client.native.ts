@@ -31,6 +31,7 @@ type CodePushRuntime = CodePushDecorator & {
     label?: string;
     description?: string;
   } | null>;
+  restartApp: (onlyIfUpdateIsPending?: boolean) => void;
 };
 
 const typedCodePush = codePush as unknown as CodePushRuntime;
@@ -82,7 +83,15 @@ export const syncToDeployment = async (
     onProgress
   );
 
-  return {
-    status: syncStatusNames[statusCode] ?? `STATUS_${statusCode}`,
-  };
+  const status = syncStatusNames[statusCode] ?? `STATUS_${statusCode}`;
+
+  if (status === "UPDATE_INSTALLED") {
+    typedCodePush.restartApp();
+  }
+
+  return { status };
+};
+
+export const restartApp = () => {
+  typedCodePush.restartApp();
 };
