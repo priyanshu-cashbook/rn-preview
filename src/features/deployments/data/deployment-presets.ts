@@ -66,10 +66,10 @@ export const deploymentSeeds: DeploymentDescriptor[] = [
     deploymentName: "Staging",
     deploymentKey:
       extra.deployments?.stagingKey ?? "REVOPUSH_STAGING_KEY_PLACEHOLDER",
-    branchName: "dev",
+    branchName: "staging",
     displayName: "Staging",
     flavor: "staging",
-    description: "Integration channel for the dev branch and QA validation.",
+    description: "Integration channel for the staging branch and QA validation.",
     source: "seed",
     isDefault: true,
     theme: themes.staging,

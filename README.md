@@ -125,11 +125,96 @@ The local plugin keeps the same configuration intent, but patches the current Ex
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and replace the placeholder keys:
+Copy `.env.example` to `.env` and fill in the appropriate values:
 
 ```bash
 cp .env.example .env
 ```
+
+`.env.example` is split into three sections:
+
+- **Client-public (`EXPO_PUBLIC_*`)** — inlined into the mobile JS bundle. Safe for deployment keys, app names, and the preview API URL. Never put the Revopush admin access key here.
+- **Server-only** — consumed by the Expo Router API routes (`src/app/deployments/list+api.ts`). Configure these on your server host (EAS Hosting, Vercel, etc.), not on developer machines unless you run the server locally.
+- **GitHub Action** — secret + variables configured in the GitHub repo, not in `.env`.
+
+## Co-located preview API
+
+The app fetches its deployment catalog from `POST /deployments/list`. That endpoint is served by an Expo Router API route at [src/app/deployments/list+api.ts](src/app/deployments/list+api.ts). Because `web.output` is set to `"server"` in [app.config.ts](app.config.ts), `expo export` produces a Node server bundle that serves both the web app and the API routes.
+
+Deploy options:
+
+- **EAS Hosting** (recommended): `npx eas deploy` after `eas init`.
+- **Vercel**: `vercel deploy` with the framework preset `Expo`.
+- **Self-hosted Node**: `npx expo export --platform web` then run the generated server entry.
+
+Set `EXPO_PUBLIC_PREVIEW_API_URL` to the deployed origin (no trailing slash). If left blank, the app falls back to the seeded in-bundle catalog for mock mode.
+
+## GitHub Action: per-branch preview deployments
+
+[.github/workflows/release-preview.yml](.github/workflows/release-preview.yml) runs on every push. The release target is derived from the branch:
+
+| Branch | Revopush deployment |
+| --- | --- |
+| `main` | `Production` |
+| `staging` | `Staging` |
+| anything else | the branch name, sanitized to `[A-Za-z0-9_-]` (e.g. `feat/payments-redesign` → `feat-payments-redesign`) |
+
+Jobs:
+
+- `get_version` — reads `versionName` from [android/app/build.gradle](android/app/build.gradle), derives a major-version semver range `>=N.0.0 <N.1000.0`, and resolves the deployment name.
+- `android_preview_deployment` — bundles with `npx expo export:embed --platform android --bytecode`, releases to Revopush. Skipped when `vars.REVOPUSH_APP_NAME_ANDROID` is unset.
+- `ios_preview_deployment` — mirror job for iOS. Skipped when `vars.REVOPUSH_APP_NAME_IOS` is unset, so you can enable iOS later by just setting that variable.
+- `cleanup_deployment` — on branch delete, removes the matching deployment from both Android and iOS apps. Never runs for `main` or `staging`.
+
+The target binary version passed to `revopush release` is a **major-version range**, so a single preview release is valid across all installed binaries on that major line — minor `versionName` bumps on the native side do not invalidate preview bundles.
+
+If the pushed branch has an open PR, the workflow posts/updates a PR comment with the deployment name, version range, commit, and (best-effort) the deployment key.
+
+### Why `expo export:embed --bytecode` instead of `react-native bundle` + manual Hermes
+
+Reference workflows you'll find in bare RN projects do a two-step `react-native bundle` then `hermesc -emit-binary`. That bypasses Expo's asset resolver and config-plugin modifiers, which can cause silent asset mismatches in an Expo app. `expo export:embed --bytecode` wraps the same Metro + Hermes steps with the Expo toolchain, which is what the Revopush Expo docs prescribe.
+
+### Required repo configuration
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Secret | `REVOPUSH_ACCESS_KEY` | Admin key from Revopush UI → Settings → Add key |
+| Variable | `REVOPUSH_APP_NAME_ANDROID` | Android app name registered in Revopush (e.g. `SelfPreviewAndroid`) |
+| Variable | `REVOPUSH_APP_NAME_IOS` | iOS app name (only needed when you enable the iOS job) |
+
+Set these via **Settings → Secrets and variables → Actions**.
+
+### Exposing preview branches to the app
+
+The mobile app reads its catalog from the server. To make a new preview selectable in the UI without a rebuild, add it to the server-only env var `REVOPUSH_DYNAMIC_DEPLOYMENTS`:
+
+```jsonc
+// Value for REVOPUSH_DYNAMIC_DEPLOYMENTS
+[
+  { "id": "preview-feat-payments-redesign", "name": "preview-feat-payments-redesign", "key": "<deployment-key>" }
+]
+```
+
+Then redeploy the API (EAS Hosting and Vercel both redeploy on env-var change). Alternatively extend [src/app/deployments/list+api.ts](src/app/deployments/list+api.ts) to shell out to `revopush deployment ls -k` at request time — noted but out of scope for v1.
+
+### Enabling iOS
+
+The workflow ships with Android only because no iOS binary exists yet. When you have an iOS dev build and an iOS app in Revopush:
+
+1. Add the `REVOPUSH_APP_NAME_IOS` repo variable.
+2. Duplicate the `release-android` job as `release-ios` and replace the bundle command with:
+
+   ```bash
+   npx expo export:embed \
+     --platform ios \
+     --dev false \
+     --reset-cache \
+     --bundle-output ./build-ios/main.jsbundle \
+     --assets-dest ./build-ios \
+     --bytecode
+   ```
+
+3. Use `./build-ios` and `$APP_NAME_IOS` in the `revopush release` call.
 
 ## Commands
 

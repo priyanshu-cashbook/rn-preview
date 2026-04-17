@@ -1,0 +1,395 @@
+name: Release Preview Deployment
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+    inputs:
+      deployment_name:
+        description: "Deployment name to release to (e.g. Production, Staging, my-branch)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  get_version:
+    if: github.event_name != 'delete'
+    name: Extract app version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      major_version: ${{ steps.extract.outputs.major_version }}
+      version_range: ${{ steps.extract.outputs.version_range }}
+      deployment_name: ${{ steps.resolve.outputs.deployment_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read versionName from build.gradle
+        id: extract
+        run: |
+          set -e
+          VERSION=$(grep 'versionName' ./android/app/build.gradle | sed -E 's/.*versionName "([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to extract versionName from android/app/build.gradle"
+            exit 1
+          fi
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          if [ -z "$MAJOR" ]; then
+            echo "::error::Failed to extract major version from $VERSION"
+            exit 1
+          fi
+          RANGE=">=${MAJOR}.0.0 <${MAJOR}.1000.0"
+          {
+            echo "version=$VERSION"
+            echo "major_version=$MAJOR"
+            echo "version_range=$RANGE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION  Major: $MAJOR  Range: $RANGE"
+
+      - name: Resolve deployment name
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DISPATCH_NAME: ${{ inputs.deployment_name }}
+        run: |
+          set -e
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            DEPLOYMENT="$DISPATCH_NAME"
+          elif [ "$REF_NAME" = "main" ]; then
+            DEPLOYMENT="Production"
+          elif [ "$REF_NAME" = "staging" ]; then
+            DEPLOYMENT="Staging"
+          else
+            DEPLOYMENT=$(printf '%s' "$REF_NAME" | sed -E 's/[^a-zA-Z0-9_-]+/-/g' | sed -E 's/^-+|-+$//g' | cut -c1-40)
+          fi
+          if [ -z "$DEPLOYMENT" ]; then
+            echo "::error::Deployment name resolved to empty (ref=$REF_NAME)"
+            exit 1
+          fi
+          echo "deployment_name=$DEPLOYMENT" >> "$GITHUB_OUTPUT"
+          echo "Deployment: $DEPLOYMENT"
+
+  android_preview_deployment:
+    needs: get_version
+    if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_ANDROID != '' }}
+    name: Android preview deployment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      APP_NAME: ${{ vars.REVOPUSH_APP_NAME_ANDROID }}
+      DEPLOYMENT: ${{ needs.get_version.outputs.deployment_name }}
+      VERSION_RANGE: ${{ needs.get_version.outputs.version_range }}
+      EXPO_PUBLIC_PREVIEW_API_URL: ${{ vars.EXPO_PUBLIC_PREVIEW_API_URL }}
+      EXPO_PUBLIC_REVOPUSH_APP_NAME_ANDROID: ${{ vars.REVOPUSH_APP_NAME_ANDROID }}
+      EXPO_PUBLIC_REVOPUSH_APP_NAME_IOS: ${{ vars.REVOPUSH_APP_NAME_IOS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clear Metro cache
+        run: rm -rf /tmp/metro-*
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Revopush CLI
+        uses: revopush/revopush-github-action@v1
+        with:
+          version: latest
+          accessKey: ${{ secrets.REVOPUSH_ACCESS_KEY }}
+
+      - name: Ensure deployment exists (idempotent)
+        run: |
+          set +e
+          revopush deployment add "$APP_NAME" "$DEPLOYMENT" || true
+
+      - name: Extract deployment key (best-effort, for PR comment)
+        id: key
+        continue-on-error: true
+        run: |
+          set +e
+          RAW="$(revopush deployment ls "$APP_NAME" -k 2>/dev/null)"
+          KEY=$(printf '%s\n' "$RAW" | awk -v name="$DEPLOYMENT" '
+            index($0, name) {
+              n = split($0, cells, /[│|]/);
+              for (i = 1; i <= n; i++) {
+                gsub(/^[ \t]+|[ \t]+$/, "", cells[i]);
+                if (cells[i] ~ /^[A-Za-z0-9_-]{20,}$/) { print cells[i]; exit }
+              }
+            }
+          ')
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Bundle JS for Android (Expo + Hermes)
+        run: |
+          mkdir -p ./android-assets
+          npx expo export:embed \
+            --platform android \
+            --dev false \
+            --reset-cache \
+            --bundle-output ./android-assets/index.android.bundle \
+            --assets-dest ./android-assets \
+            --bytecode
+
+      - name: Release to Revopush
+        run: |
+          revopush release \
+            "$APP_NAME" \
+            ./android-assets \
+            "$VERSION_RANGE" \
+            -d "$DEPLOYMENT" \
+            --description "Preview from ${{ github.ref_name }} (commit ${{ github.sha }})" \
+            --mandatory
+
+      - name: Comment on associated PR (if any)
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_KEY: ${{ steps.key.outputs.key }}
+          PLATFORM: android
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        with:
+          script: |
+            const ref = process.env.REF_NAME;
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${ref}`,
+              per_page: 5,
+            });
+            if (prs.length === 0) return;
+
+            const marker = `<!-- rn-preview-switcher:${process.env.PLATFORM} -->`;
+            const key = process.env.DEPLOYMENT_KEY || '';
+            const body = [
+              marker,
+              `### ${process.env.PLATFORM === 'ios' ? 'iOS' : 'Android'} preview deployment ready`,
+              '',
+              `- Deployment: \`${process.env.DEPLOYMENT || ''}\``,
+              `- Target binary range: \`${process.env.VERSION_RANGE || ''}\``,
+              key
+                ? `- Deployment key: \`${key}\``
+                : '- Deployment key: _not auto-extracted — copy it from the Revopush dashboard._',
+              `- Commit: \`${(process.env.SHA || '').slice(0, 7)}\``,
+              '',
+              'Open the dev-build app, go to **Preview Switcher**, and switch to this deployment. If it is not listed, append the key to server env `REVOPUSH_DYNAMIC_DEPLOYMENTS` (JSON) and redeploy the API.',
+            ].join('\n');
+
+            for (const pr of prs) {
+              const { data: comments } = await github.rest.issues.listComments({
+                issue_number: pr.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            }
+
+  ios_preview_deployment:
+    needs: get_version
+    if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_IOS != '' }}
+    name: iOS preview deployment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      APP_NAME: ${{ vars.REVOPUSH_APP_NAME_IOS }}
+      DEPLOYMENT: ${{ needs.get_version.outputs.deployment_name }}
+      VERSION_RANGE: ${{ needs.get_version.outputs.version_range }}
+      EXPO_PUBLIC_PREVIEW_API_URL: ${{ vars.EXPO_PUBLIC_PREVIEW_API_URL }}
+      EXPO_PUBLIC_REVOPUSH_APP_NAME_ANDROID: ${{ vars.REVOPUSH_APP_NAME_ANDROID }}
+      EXPO_PUBLIC_REVOPUSH_APP_NAME_IOS: ${{ vars.REVOPUSH_APP_NAME_IOS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clear Metro cache
+        run: rm -rf /tmp/metro-*
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Revopush CLI
+        uses: revopush/revopush-github-action@v1
+        with:
+          version: latest
+          accessKey: ${{ secrets.REVOPUSH_ACCESS_KEY }}
+
+      - name: Ensure deployment exists (idempotent)
+        run: |
+          set +e
+          revopush deployment add "$APP_NAME" "$DEPLOYMENT" || true
+
+      - name: Extract deployment key (best-effort, for PR comment)
+        id: key
+        continue-on-error: true
+        run: |
+          set +e
+          RAW="$(revopush deployment ls "$APP_NAME" -k 2>/dev/null)"
+          KEY=$(printf '%s\n' "$RAW" | awk -v name="$DEPLOYMENT" '
+            index($0, name) {
+              n = split($0, cells, /[│|]/);
+              for (i = 1; i <= n; i++) {
+                gsub(/^[ \t]+|[ \t]+$/, "", cells[i]);
+                if (cells[i] ~ /^[A-Za-z0-9_-]{20,}$/) { print cells[i]; exit }
+              }
+            }
+          ')
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Bundle JS for iOS (Expo + Hermes)
+        run: |
+          mkdir -p ./ios-assets
+          npx expo export:embed \
+            --platform ios \
+            --dev false \
+            --reset-cache \
+            --bundle-output ./ios-assets/main.jsbundle \
+            --assets-dest ./ios-assets \
+            --bytecode
+
+      - name: Release to Revopush
+        run: |
+          revopush release \
+            "$APP_NAME" \
+            ./ios-assets \
+            "$VERSION_RANGE" \
+            -d "$DEPLOYMENT" \
+            --description "Preview from ${{ github.ref_name }} (commit ${{ github.sha }})" \
+            --mandatory
+
+      - name: Comment on associated PR (if any)
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_KEY: ${{ steps.key.outputs.key }}
+          PLATFORM: ios
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        with:
+          script: |
+            const ref = process.env.REF_NAME;
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${ref}`,
+              per_page: 5,
+            });
+            if (prs.length === 0) return;
+
+            const marker = `<!-- rn-preview-switcher:${process.env.PLATFORM} -->`;
+            const key = process.env.DEPLOYMENT_KEY || '';
+            const body = [
+              marker,
+              `### ${process.env.PLATFORM === 'ios' ? 'iOS' : 'Android'} preview deployment ready`,
+              '',
+              `- Deployment: \`${process.env.DEPLOYMENT || ''}\``,
+              `- Target binary range: \`${process.env.VERSION_RANGE || ''}\``,
+              key
+                ? `- Deployment key: \`${key}\``
+                : '- Deployment key: _not auto-extracted — copy it from the Revopush dashboard._',
+              `- Commit: \`${(process.env.SHA || '').slice(0, 7)}\``,
+              '',
+              'Open the dev-build app, go to **Preview Switcher**, and switch to this deployment. If it is not listed, append the key to server env `REVOPUSH_DYNAMIC_DEPLOYMENTS` (JSON) and redeploy the API.',
+            ].join('\n');
+
+            for (const pr of prs) {
+              const { data: comments } = await github.rest.issues.listComments({
+                issue_number: pr.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            }
+
+  cleanup_deployment:
+    if: >-
+      github.event_name == 'delete' &&
+      github.event.ref_type == 'branch' &&
+      github.event.ref != 'main' &&
+      github.event.ref != 'staging'
+    name: Remove deployment on branch delete
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve deployment name
+        id: resolve
+        env:
+          REF_NAME: ${{ github.event.ref }}
+        run: |
+          DEPLOYMENT=$(printf '%s' "$REF_NAME" | sed -E 's/[^a-zA-Z0-9_-]+/-/g' | sed -E 's/^-+|-+$//g' | cut -c1-40)
+          echo "name=$DEPLOYMENT" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Revopush CLI
+        uses: revopush/revopush-github-action@v1
+        with:
+          version: latest
+          accessKey: ${{ secrets.REVOPUSH_ACCESS_KEY }}
+
+      - name: Remove Android deployment
+        if: vars.REVOPUSH_APP_NAME_ANDROID != ''
+        continue-on-error: true
+        env:
+          APP_NAME: ${{ vars.REVOPUSH_APP_NAME_ANDROID }}
+          DEPLOYMENT: ${{ steps.resolve.outputs.name }}
+        run: echo "y" | revopush deployment rm "$APP_NAME" "$DEPLOYMENT" || echo "::warning::Could not remove Android deployment $DEPLOYMENT"
+
+      - name: Remove iOS deployment
+        if: vars.REVOPUSH_APP_NAME_IOS != ''
+        continue-on-error: true
+        env:
+          APP_NAME: ${{ vars.REVOPUSH_APP_NAME_IOS }}
+          DEPLOYMENT: ${{ steps.resolve.outputs.name }}
+        run: echo "y" | revopush deployment rm "$APP_NAME" "$DEPLOYMENT" || echo "::warning::Could not remove iOS deployment $DEPLOYMENT"
