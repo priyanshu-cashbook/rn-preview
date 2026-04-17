@@ -72,6 +72,19 @@ export default function HomeScreen() {
           different deployment key, which is the same core idea used in the reference repos.
         </Text>
       </View>
+
+      <View style={styles.stagingSection}>
+        <Text style={styles.stagingEyebrow}>Dev branch only</Text>
+        <Text style={styles.sectionTitle}>Staging validation checklist</Text>
+        <Text style={styles.copy}>
+          This card only exists on the `dev` branch and gives QA a fast way to
+          confirm that a staging deployment was actually loaded on-device.
+        </Text>
+        <View style={styles.checklistRow}>
+          <StatusPill label="QA Ready" tone="#8A6412" background="#FFF4D6" />
+          <StatusPill label="Branch: dev" tone="#8A6412" background="#FFF4D6" />
+        </View>
+      </View>
     </Screen>
   );
 }
@@ -132,5 +145,25 @@ const styles = StyleSheet.create({
   mappingKey: {
     color: "#486581",
     fontSize: 12,
+  },
+  stagingSection: {
+    backgroundColor: "#FFF7E0",
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#F2D18A",
+    gap: 14,
+  },
+  stagingEyebrow: {
+    color: "#B7791F",
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  checklistRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
   },
 });
