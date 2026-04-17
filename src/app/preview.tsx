@@ -49,7 +49,9 @@ export default function PreviewScreen() {
       Alert.alert(
         "Deployment switch complete",
         result.mode === "native"
-          ? `Revopush sync finished with status ${result.status}. If an update was installed, the app may restart immediately.`
+          ? result.status === "UPDATE_INSTALLED"
+            ? "Revopush downloaded the new bundle. The app will restart now."
+            : `Revopush sync finished with status ${result.status}.`
           : "Mock switch complete. Add real deployment keys and run a dev build to verify OTA updates."
       );
     } catch (switchError) {
