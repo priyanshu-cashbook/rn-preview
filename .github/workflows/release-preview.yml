@@ -27,13 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read versionName from build.gradle
+      - name: Read version from package.json
         id: extract
         run: |
           set -e
-          VERSION=$(grep 'versionName' ./android/app/build.gradle | sed -E 's/.*versionName "([^"]+)".*/\1/')
-          if [ -z "$VERSION" ]; then
-            echo "::error::Failed to extract versionName from android/app/build.gradle"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "::error::Failed to read version from package.json"
             exit 1
           fi
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
