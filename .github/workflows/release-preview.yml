@@ -78,6 +78,7 @@ jobs:
     name: Debug workflow context
     needs: get_version
     runs-on: ubuntu-latest
+    environment: rn-preview
     steps:
       - name: Dump event and gates
         env:
@@ -136,6 +137,7 @@ jobs:
     if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_ANDROID != '' }}
     name: Android preview deployment
     runs-on: ubuntu-latest
+    environment: rn-preview
     permissions:
       contents: read
       pull-requests: write
@@ -277,6 +279,7 @@ jobs:
     if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_IOS != '' }}
     name: iOS preview deployment
     runs-on: ubuntu-latest
+    environment: rn-preview
     permissions:
       contents: read
       pull-requests: write
@@ -421,6 +424,7 @@ jobs:
       github.event.ref != 'staging'
     name: Remove deployment on branch delete
     runs-on: ubuntu-latest
+    environment: rn-preview
     steps:
       - name: Resolve deployment name
         id: resolve
