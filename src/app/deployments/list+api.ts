@@ -69,7 +69,14 @@ const fetchLiveDeployments = async (
 ): Promise<RemoteDeployment[]> => {
   const accessKey = process.env.REVOPUSH_ACCESS_KEY;
   const appName = resolveAppName(platform);
-  if (!accessKey || !appName) return [];
+  if (!accessKey) {
+    throw new Error("REVOPUSH_ACCESS_KEY is not set on the server");
+  }
+  if (!appName) {
+    throw new Error(
+      `REVOPUSH_APP_NAME_${platform === "ios" ? "IOS" : "ANDROID"} is not set on the server`,
+    );
+  }
 
   const serverUrl = (
     process.env.REVOPUSH_SERVER_URL ?? "https://api.revopush.org"
@@ -86,7 +93,7 @@ const fetchLiveDeployments = async (
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
-      `Revopush API ${response.status} ${response.statusText}: ${body.slice(0, 200)}`,
+      `Revopush API ${response.status} ${response.statusText} at ${url}: ${body.slice(0, 200)}`,
     );
   }
 
@@ -150,11 +157,21 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Unknown Revopush API error";
     const fallback = dedupeByName(parseDynamic());
+    const revopushEnvKeys = Object.keys(process.env)
+      .filter((k) => k.startsWith("REVOPUSH") || k.startsWith("EXPO_PUBLIC_"))
+      .sort();
     return Response.json(
       {
         success: fallback.length > 0,
         data: fallback,
         error: `Live deployment fetch failed: ${message}`,
+        debug: {
+          platform,
+          revopushEnvKeys,
+          accessKeyPresent: Boolean(process.env.REVOPUSH_ACCESS_KEY),
+          appNameAndroidPresent: Boolean(process.env.REVOPUSH_APP_NAME_ANDROID),
+          appNameIosPresent: Boolean(process.env.REVOPUSH_APP_NAME_IOS),
+        },
       },
       { status: fallback.length > 0 ? 200 : 502 },
     );
