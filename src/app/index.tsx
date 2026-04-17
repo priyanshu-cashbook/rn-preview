@@ -1,98 +1,136 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from "react-native";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+import { Screen } from "@/components/screen";
+import { HeroCard } from "@/features/deployments/components/hero-card";
+import { StatusPill } from "@/features/deployments/components/status-pill";
+import { toBranchPreviewMapping } from "@/features/deployments/model/mappers";
+import { canUseNativeRevopush, isExpoGo } from "@/services/revopush/runtime";
+import {
+  selectActiveDeployment,
+  useDeploymentStore,
+} from "@/store/use-deployment-store";
 
 export default function HomeScreen() {
+  const deployment = useDeploymentStore(selectActiveDeployment);
+  const deployments = useDeploymentStore((state) => state.deployments);
+  const currentLabel = useDeploymentStore((state) => state.currentLabel);
+  const currentDescription = useDeploymentStore((state) => state.currentDescription);
+  const status = useDeploymentStore((state) => state.status);
+
+  const mappings = toBranchPreviewMapping(deployments);
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <Screen
+      title="RN Preview Switcher"
+      subtitle="A clean Expo SDK 55 demo showing how branch-based mobile previews can feel as fast as web preview deployments."
+    >
+      <HeroCard
+        deployment={deployment}
+        currentLabel={currentLabel}
+        currentDescription={currentDescription}
+      />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Environment health</Text>
+        <View style={styles.pillRow}>
+          <StatusPill
+            label={status}
+            tone="#0F172A"
+            background="#DBEAFE"
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
+          <StatusPill
+            label={canUseNativeRevopush() ? "Dev Build" : isExpoGo ? "Expo Go" : "Web"}
+            tone={canUseNativeRevopush() ? "#1F9D55" : "#8A6412"}
+            background={canUseNativeRevopush() ? "#D9F8E7" : "#FFF4D6"}
           />
-        </ThemedView>
+        </View>
+        <Text style={styles.copy}>
+          Revopush needs a native build. This project still renders in Expo Go or web,
+          but deployment switching becomes a local simulation until you run a dev build.
+        </Text>
+      </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Branch mapping</Text>
+        {mappings.map((mapping) => (
+          <View key={mapping.branchName} style={styles.mappingRow}>
+            <Text style={styles.mappingBranch}>{mapping.branchName}</Text>
+            <Text style={styles.mappingArrow}>{"->"}</Text>
+            <View style={styles.mappingCopy}>
+              <Text style={styles.mappingName}>{mapping.deploymentName}</Text>
+              <Text style={styles.mappingKey}>{mapping.deploymentKey}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>How this demo works</Text>
+        <Text style={styles.copy}>
+          The binary ships with a base deployment key from `app.config.ts`. At runtime,
+          the Preview screen overrides that target by calling Revopush `sync` with a
+          different deployment key, which is the same core idea used in the reference repos.
+        </Text>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  section: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#D6E3F0",
+    gap: 14,
+  },
+  sectionTitle: {
+    color: "#102A43",
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: "800",
+  },
+  pillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  copy: {
+    color: "#486581",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  mappingRow: {
+    borderRadius: 18,
+    backgroundColor: "#F4F8FB",
+    padding: 14,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  mappingBranch: {
+    width: 92,
+    color: "#102A43",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  mappingArrow: {
+    color: "#829AB1",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  mappingCopy: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    gap: 2,
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+  mappingName: {
+    color: "#243B53",
+    fontSize: 14,
+    fontWeight: "700",
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  mappingKey: {
+    color: "#486581",
+    fontSize: 12,
   },
 });

@@ -1,16 +1,49 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import React from 'react';
-import { useColorScheme } from 'react-native';
+import { Drawer } from "expo-router/drawer";
+import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { useDeploymentBootstrap } from "@/features/deployments/hooks/use-deployment-bootstrap";
+import { withCodePush } from "@/services/revopush/client";
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+function RootLayout() {
+  useDeploymentBootstrap();
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <StatusBar style="light" />
+      <Drawer
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: "#102A43",
+          },
+          headerTintColor: "#F8FAFC",
+          drawerStyle: {
+            backgroundColor: "#F4F8FB",
+          },
+          drawerActiveTintColor: "#7C3AED",
+          drawerInactiveTintColor: "#486581",
+          sceneStyle: {
+            backgroundColor: "#F4F8FB",
+          },
+        }}
+      >
+        <Drawer.Screen
+          name="index"
+          options={{
+            drawerLabel: "Home",
+            title: "Branch Preview Home",
+          }}
+        />
+        <Drawer.Screen
+          name="preview"
+          options={{
+            drawerLabel: "Preview Switcher",
+            title: "Preview Deployments",
+          }}
+        />
+      </Drawer>
+    </GestureHandlerRootView>
   );
 }
+
+export default withCodePush(RootLayout);
