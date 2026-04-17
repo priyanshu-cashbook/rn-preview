@@ -73,6 +73,64 @@ jobs:
           echo "deployment_name=$DEPLOYMENT" >> "$GITHUB_OUTPUT"
           echo "Deployment: $DEPLOYMENT"
 
+  debug_context:
+    if: always() && github.event_name != 'delete'
+    name: Debug workflow context
+    needs: get_version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump event and gates
+        env:
+          ANDROID_APP_NAME: ${{ vars.REVOPUSH_APP_NAME_ANDROID }}
+          IOS_APP_NAME: ${{ vars.REVOPUSH_APP_NAME_IOS }}
+          PREVIEW_API_URL: ${{ vars.EXPO_PUBLIC_PREVIEW_API_URL }}
+          HAS_ACCESS_KEY: ${{ secrets.REVOPUSH_ACCESS_KEY != '' }}
+          GET_VERSION_RESULT: ${{ needs.get_version.result }}
+          GET_VERSION_DEPLOYMENT: ${{ needs.get_version.outputs.deployment_name }}
+          GET_VERSION_VERSION: ${{ needs.get_version.outputs.version }}
+          GET_VERSION_RANGE: ${{ needs.get_version.outputs.version_range }}
+        run: |
+          echo "=== Event ==="
+          echo "event_name : ${{ github.event_name }}"
+          echo "ref        : ${{ github.ref }}"
+          echo "ref_name   : ${{ github.ref_name }}"
+          echo "sha        : ${{ github.sha }}"
+          echo ""
+          echo "=== get_version job ==="
+          echo "result          : $GET_VERSION_RESULT"
+          echo "deployment_name : ${GET_VERSION_DEPLOYMENT:-<empty>}"
+          echo "version         : ${GET_VERSION_VERSION:-<empty>}"
+          echo "version_range   : ${GET_VERSION_RANGE:-<empty>}"
+          echo ""
+          echo "=== Repository variables (Settings -> Secrets and variables -> Actions -> Variables) ==="
+          if [ -n "$ANDROID_APP_NAME" ]; then
+            echo "REVOPUSH_APP_NAME_ANDROID    : SET ($ANDROID_APP_NAME)"
+          else
+            echo "REVOPUSH_APP_NAME_ANDROID    : <empty>  -> Android job WILL SKIP"
+          fi
+          if [ -n "$IOS_APP_NAME" ]; then
+            echo "REVOPUSH_APP_NAME_IOS        : SET ($IOS_APP_NAME)"
+          else
+            echo "REVOPUSH_APP_NAME_IOS        : <empty>  -> iOS job WILL SKIP"
+          fi
+          if [ -n "$PREVIEW_API_URL" ]; then
+            echo "EXPO_PUBLIC_PREVIEW_API_URL  : SET ($PREVIEW_API_URL)"
+          else
+            echo "EXPO_PUBLIC_PREVIEW_API_URL  : <empty>  (optional, app falls back to mock mode)"
+          fi
+          echo ""
+          echo "=== Repository secrets ==="
+          echo "REVOPUSH_ACCESS_KEY          : present=$HAS_ACCESS_KEY"
+          echo ""
+          echo "=== Gate evaluation ==="
+          echo "android gate: get_version.result == 'success' && REVOPUSH_APP_NAME_ANDROID != ''"
+          echo "             = '$GET_VERSION_RESULT' == 'success' && '${ANDROID_APP_NAME:-<empty>}' != ''"
+          echo "ios gate    : get_version.result == 'success' && REVOPUSH_APP_NAME_IOS != ''"
+          echo "             = '$GET_VERSION_RESULT' == 'success' && '${IOS_APP_NAME:-<empty>}' != ''"
+          echo ""
+          echo "Heads-up: If a var was created under Settings -> Environments -> <env> instead of the top-level"
+          echo "Variables tab, jobs must declare 'environment: <env>' to see it. Prefer the top-level tab."
+
   android_preview_deployment:
     needs: get_version
     if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_ANDROID != '' }}
