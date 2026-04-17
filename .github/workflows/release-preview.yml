@@ -134,7 +134,7 @@ jobs:
 
   android_preview_deployment:
     needs: get_version
-    if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_ANDROID != '' }}
+    if: ${{ needs.get_version.result == 'success' }}
     name: Android preview deployment
     runs-on: ubuntu-latest
     environment: rn-preview
