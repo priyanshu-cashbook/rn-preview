@@ -124,13 +124,15 @@ jobs:
           echo "REVOPUSH_ACCESS_KEY          : present=$HAS_ACCESS_KEY"
           echo ""
           echo "=== Gate evaluation ==="
-          echo "android gate: get_version.result == 'success' && REVOPUSH_APP_NAME_ANDROID != ''"
-          echo "             = '$GET_VERSION_RESULT' == 'success' && '${ANDROID_APP_NAME:-<empty>}' != ''"
-          echo "ios gate    : get_version.result == 'success' && REVOPUSH_APP_NAME_IOS != ''"
-          echo "             = '$GET_VERSION_RESULT' == 'success' && '${IOS_APP_NAME:-<empty>}' != ''"
+          echo "android job: runs when get_version.result == 'success' (env-scoped APP_NAME read inside job)"
+          echo "             = '$GET_VERSION_RESULT' == 'success'"
+          echo "             APP_NAME='${ANDROID_APP_NAME:-<empty>}' (must be set for Revopush steps to succeed)"
+          echo "ios job    : gated at job level on REPO-LEVEL vars.REVOPUSH_APP_NAME_IOS != ''"
+          echo "             Must be set under Settings -> Secrets and variables -> Actions -> Variables (NOT under Environments),"
+          echo "             otherwise the gate reads empty at evaluation time and the whole job is skipped."
           echo ""
-          echo "Heads-up: If a var was created under Settings -> Environments -> <env> instead of the top-level"
-          echo "Variables tab, jobs must declare 'environment: <env>' to see it. Prefer the top-level tab."
+          echo "Note: env-scoped vars/secrets are not visible at job-level 'if:' evaluation."
+          echo "Put toggles that gate whole jobs at the repo level; use the environment only for values read inside steps."
 
   android_preview_deployment:
     needs: get_version
@@ -276,6 +278,9 @@ jobs:
 
   ios_preview_deployment:
     needs: get_version
+    # Gate uses vars.REVOPUSH_APP_NAME_IOS, which MUST be defined at repo level
+    # (Settings -> Secrets and variables -> Actions -> Variables). Env-scoped
+    # vars are not readable at job-level `if:` and would silently skip.
     if: ${{ needs.get_version.result == 'success' && vars.REVOPUSH_APP_NAME_IOS != '' }}
     name: iOS preview deployment
     runs-on: ubuntu-latest

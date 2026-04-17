@@ -176,13 +176,14 @@ Reference workflows you'll find in bare RN projects do a two-step `react-native 
 
 ### Required repo configuration
 
-| Kind | Name | Purpose |
-| --- | --- | --- |
-| Secret | `REVOPUSH_ACCESS_KEY` | Admin key from Revopush UI → Settings → Add key |
-| Variable | `REVOPUSH_APP_NAME_ANDROID` | Android app name registered in Revopush (e.g. `SelfPreviewAndroid`) |
-| Variable | `REVOPUSH_APP_NAME_IOS` | iOS app name (only needed when you enable the iOS job) |
+| Kind | Name | Scope | Purpose |
+| --- | --- | --- | --- |
+| Secret | `REVOPUSH_ACCESS_KEY` | Environment `rn-preview` | Admin key from Revopush UI → Settings → Add key |
+| Variable | `REVOPUSH_APP_NAME_ANDROID` | Environment `rn-preview` | Android app name registered in Revopush (e.g. `SelfPreviewAndroid`) |
+| Variable | `REVOPUSH_APP_NAME_IOS` | **Repo-level** (top-level Variables tab) | iOS app name. Gates the iOS job at `if:` evaluation time; GitHub does not expose environment-scoped vars there, so this one must live at the repo level or the iOS job silently skips. |
+| Variable | `EXPO_PUBLIC_PREVIEW_API_URL` | Environment `rn-preview` | Deployed preview API origin (no trailing slash) |
 
-Set these via **Settings → Secrets and variables → Actions**.
+Set environment-scoped entries under **Settings → Environments → `rn-preview`**, and repo-level entries under **Settings → Secrets and variables → Actions → Variables**.
 
 ### Exposing preview branches to the app
 
