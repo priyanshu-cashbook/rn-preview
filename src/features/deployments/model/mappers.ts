@@ -46,7 +46,7 @@ export const mergeRemoteDeployments = (
     ])
   );
 
-  const merged: DeploymentDescriptor[] = remoteDeployments.map((remote) => {
+  return remoteDeployments.map((remote) => {
     const preset = seedByName.get(remote.name.toLowerCase());
 
     if (preset) {
@@ -84,16 +84,6 @@ export const mergeRemoteDeployments = (
       theme: seededTheme,
     };
   });
-
-  const seenNames = new Set(merged.map((item) => item.deploymentName.toLowerCase()));
-
-  for (const seed of deploymentSeeds) {
-    if (!seenNames.has(seed.deploymentName.toLowerCase())) {
-      merged.push(seed);
-    }
-  }
-
-  return merged;
 };
 
 export const toBranchPreviewMapping = (

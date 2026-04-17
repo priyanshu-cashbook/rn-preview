@@ -14,35 +14,101 @@ type RemoteDeployment = {
   package?: RemoteDeploymentPackage;
 };
 
-type CatalogEntry = {
-  id: string;
-  name: string;
-  envVar: string;
+const slugify = (input: string) =>
+  input
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || input.toLowerCase();
+
+const resolveAppName = (platform: Platform | undefined) => {
+  if (platform === "ios") return process.env.REVOPUSH_APP_NAME_IOS ?? "";
+  return process.env.REVOPUSH_APP_NAME_ANDROID ?? "";
 };
 
-const seedCatalog: CatalogEntry[] = [
-  { id: "production", name: "Production", envVar: "REVOPUSH_PRODUCTION_KEY" },
-  { id: "staging", name: "Staging", envVar: "REVOPUSH_STAGING_KEY" },
-  {
-    id: "preview-feature-x",
-    name: "preview-feature-x",
-    envVar: "REVOPUSH_PREVIEW_FEATURE_X_KEY",
-  },
-  {
-    id: "preview-payments",
-    name: "preview-payments-redesign",
-    envVar: "REVOPUSH_PREVIEW_PAYMENTS_KEY",
-  },
-];
-
-const platformSuffix = (platform: Platform | undefined) => {
-  if (platform === "ios") return "_IOS";
-  if (platform === "android") return "_ANDROID";
-  return "";
+const normalizeCreatedTime = (value: unknown): string | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  return undefined;
 };
 
-const readKey = (envVar: string, suffix: string) =>
-  (suffix && process.env[`${envVar}${suffix}`]) || process.env[envVar] || "";
+const toRemoteDeployment = (raw: unknown): RemoteDeployment | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const d = raw as {
+    name?: unknown;
+    key?: unknown;
+    createdTime?: unknown;
+    package?: { label?: unknown; description?: unknown; appVersion?: unknown };
+  };
+  if (typeof d.name !== "string" || typeof d.key !== "string" || d.key.length === 0) {
+    return null;
+  }
+  const pkg = d.package && typeof d.package === "object" ? d.package : undefined;
+  return {
+    id: slugify(d.name),
+    name: d.name,
+    key: d.key,
+    createdTime: normalizeCreatedTime(d.createdTime),
+    package: pkg
+      ? {
+          label: typeof pkg.label === "string" ? pkg.label : undefined,
+          description:
+            typeof pkg.description === "string" ? pkg.description : undefined,
+          appVersion:
+            typeof pkg.appVersion === "string" ? pkg.appVersion : undefined,
+        }
+      : undefined,
+  };
+};
+
+const fetchLiveDeployments = async (
+  platform: Platform | undefined,
+): Promise<RemoteDeployment[]> => {
+  const accessKey = process.env.REVOPUSH_ACCESS_KEY;
+  const appName = resolveAppName(platform);
+  if (!accessKey) {
+    throw new Error("REVOPUSH_ACCESS_KEY is not set on the server");
+  }
+  if (!appName) {
+    throw new Error(
+      `REVOPUSH_APP_NAME_${platform === "ios" ? "IOS" : "ANDROID"} is not set on the server`,
+    );
+  }
+
+  const serverUrl = (
+    process.env.REVOPUSH_SERVER_URL ?? "https://api.revopush.org"
+  ).replace(/\/+$/, "");
+  const url = `${serverUrl}/apps/${encodeURIComponent(appName)}/deployments`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessKey}`,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Revopush API ${response.status} ${response.statusText} at ${url}: ${body.slice(0, 200)}`,
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+  const list = Array.isArray((payload as { deployments?: unknown[] })?.deployments)
+    ? ((payload as { deployments: unknown[] }).deployments)
+    : Array.isArray(payload)
+      ? (payload as unknown[])
+      : [];
+
+  return list.flatMap((raw) => {
+    const parsed = toRemoteDeployment(raw);
+    return parsed ? [parsed] : [];
+  });
+};
 
 const parseDynamic = (): RemoteDeployment[] => {
   const raw = process.env.REVOPUSH_DYNAMIC_DEPLOYMENTS;
@@ -51,40 +117,29 @@ const parseDynamic = (): RemoteDeployment[] => {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-
     return parsed.flatMap((item) => {
-      if (
-        !item ||
-        typeof item.id !== "string" ||
-        typeof item.name !== "string" ||
-        typeof item.key !== "string" ||
-        item.key.length === 0
-      ) {
-        return [];
-      }
-
-      return [
-        {
-          id: item.id,
-          name: item.name,
-          key: item.key,
-          createdTime:
-            typeof item.createdTime === "string" ? item.createdTime : undefined,
-          package:
-            item.package && typeof item.package === "object"
-              ? (item.package as RemoteDeploymentPackage)
-              : undefined,
-        },
-      ];
+      const r = toRemoteDeployment(item);
+      return r ? [r] : [];
     });
   } catch {
     return [];
   }
 };
 
+const dedupeByName = (items: RemoteDeployment[]): RemoteDeployment[] => {
+  const seen = new Set<string>();
+  const result: RemoteDeployment[] = [];
+  for (const item of items) {
+    const key = item.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+};
+
 export async function POST(request: Request) {
   let platform: Platform | undefined;
-
   try {
     const body = (await request.json().catch(() => ({}))) as {
       platform?: Platform;
@@ -94,23 +149,33 @@ export async function POST(request: Request) {
     platform = undefined;
   }
 
-  const suffix = platformSuffix(platform);
-
-  const seeds: RemoteDeployment[] = seedCatalog.flatMap((entry) => {
-    const key = readKey(entry.envVar, suffix);
-    if (!key) return [];
-    return [
+  try {
+    const live = await fetchLiveDeployments(platform);
+    const data = dedupeByName([...live, ...parseDynamic()]);
+    return Response.json({ success: true, data });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown Revopush API error";
+    const fallback = dedupeByName(parseDynamic());
+    const revopushEnvKeys = Object.keys(process.env)
+      .filter((k) => k.startsWith("REVOPUSH") || k.startsWith("EXPO_PUBLIC_"))
+      .sort();
+    return Response.json(
       {
-        id: entry.id,
-        name: entry.name,
-        key,
+        success: fallback.length > 0,
+        data: fallback,
+        error: `Live deployment fetch failed: ${message}`,
+        debug: {
+          platform,
+          revopushEnvKeys,
+          accessKeyPresent: Boolean(process.env.REVOPUSH_ACCESS_KEY),
+          appNameAndroidPresent: Boolean(process.env.REVOPUSH_APP_NAME_ANDROID),
+          appNameIosPresent: Boolean(process.env.REVOPUSH_APP_NAME_IOS),
+        },
       },
-    ];
-  });
-
-  const data = [...seeds, ...parseDynamic()];
-
-  return Response.json({ success: true, data });
+      { status: fallback.length > 0 ? 200 : 502 },
+    );
+  }
 }
 
 export async function GET() {
@@ -119,6 +184,6 @@ export async function GET() {
       success: false,
       error: "Use POST with { platform: 'ios' | 'android' }",
     },
-    { status: 405 }
+    { status: 405 },
   );
 }
